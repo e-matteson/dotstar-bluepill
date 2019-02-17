@@ -1,9 +1,15 @@
-extern crate panic_semihosting;
-extern crate stm32f1xx_hal as hal;
+// use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
+// use core::cell::RefCell;
+
+use cortex_m_rt::exception;
+
+// use cortex_m::interrupt::{self, Mutex};
+use cortex_m::peripheral::syst::SystClkSource;
+// use cortex_m_semihosting::hprintln;
 
 use dotstar::{ColorRgb, DotstarStrip};
-use hal::{
-    delay::Delay,
+use stm32f1xx_hal::{
     gpio::{
         gpioa::{PA0, PA1, PA2, PA5, PA6, PA7},
         Alternate, Floating, Input, PullUp, PushPull,
@@ -23,9 +29,12 @@ type DotstarSPI = Spi<
     ),
 >;
 
+static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
+// static GLOBAL_BUTTON_PRESSED: AtomicBool = AtomicUsize::new(false);
+// static BUTTON_PIN: Mutex<RefCell<Option<PA2<Input<PullUp>>>>> = Mutex::new(RefCell::new(None));
+
 pub struct System {
     pub strip: DotstarStrip<DotstarSPI>,
-    pub delay: Delay,
     pub encoder: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
     pub button: PA2<Input<PullUp>>,
 }
@@ -41,7 +50,6 @@ impl System {
         // Configure clocks
         let mut flash = dp.FLASH.constrain();
         let clocks = rcc.cfgr.freeze(&mut flash.acr);
-        let delay = Delay::new(cp.SYST, clocks);
 
         // Get SPI pins
         let mut gpioa = dp.GPIOA.split(&mut rcc.apb2);
@@ -53,7 +61,15 @@ impl System {
         let c1 = gpioa.pa0;
         let c2 = gpioa.pa1;
         let encoder = Qei::tim2(dp.TIM2, (c1, c2), &mut afio.mapr, &mut rcc.apb1);
+
         let button = gpioa.pa2.into_pull_up_input(&mut gpioa.crl);
+        // interrupt::free(|cs| BUTTON_PIN.borrow(cs).replace(Some(button)));
+        // Configures the system timer to trigger a SysTick exception every 1 milliseceond
+        let mut systick = cp.SYST;
+        systick.set_clock_source(SystClkSource::Core);
+        systick.set_reload(clocks.sysclk().0 / 1_000);
+        systick.enable_counter();
+        systick.enable_interrupt();
 
         // Onboard LED
         // let mut gpioc = dp.GPIOC.split(&mut rcc.apb2);
@@ -77,14 +93,18 @@ impl System {
 
         System {
             strip: DotstarStrip::new(spi),
-            delay,
+            // systick,
             encoder,
             button,
         }
     }
+    pub fn get_millis(&self) -> u32 {
+        GLOBAL_MILLIS.load(Ordering::Relaxed) as u32
+    }
 
-    pub fn delay_ms(&mut self, ms: u32) {
-        self.delay.delay_ms(ms);
+    pub fn delay_ms(&self, ms: u32) {
+        let end = self.get_millis() + ms;
+        while self.get_millis() < end {}
     }
 
     pub fn read_encoder(&mut self) -> u16 {
@@ -98,4 +118,9 @@ impl System {
     pub fn write_lights(&mut self, lights: &[ColorRgb]) {
         self.strip.send(lights).expect("Failed to send lights");
     }
+}
+
+#[exception]
+fn SysTick() {
+    GLOBAL_MILLIS.fetch_add(1, Ordering::Relaxed);
 }

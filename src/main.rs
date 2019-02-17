@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
+#![feature(custom_attribute)]
 
 extern crate panic_semihosting;
-
 mod system;
 
 use system::System;
