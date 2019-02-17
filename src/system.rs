@@ -24,13 +24,54 @@ type DotstarSPI = Spi<
 >;
 
 pub struct System {
-    pub strip: DotstarStrip<DotstarSPI>,
-    pub delay: Delay,
-    pub encoder: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
-    pub button: PA2<Input<PullUp>>,
+    strip: DotstarStrip<DotstarSPI>,
+    delay: Delay,
+    knob_state: u16,
+    button_state: bool,
+    encoder: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
+    button: PA2<Input<PullUp>>,
 }
 
+pub enum EncoderEvent {
+    ButtonPress,
+    KnobRight,
+    KnobLeft,
+}
+
+use self::EncoderEvent::*;
+
 impl System {
+    pub fn delay_ms(&mut self, ms: u32) {
+        self.delay.delay_ms(ms);
+    }
+
+    pub fn poll_event(&mut self) -> Option<EncoderEvent> {
+        // Poll the button
+        let new_button_state = self.button.is_low();
+        if new_button_state != self.button_state {
+            self.button_state = new_button_state;
+            if new_button_state {
+                return Some(ButtonPress);
+            }
+        }
+        // Poll the knob (each tick increments the encoder by 4, so round it).
+        let new_knob_state = self.encoder.count();
+        let diff = new_knob_state.wrapping_sub(self.knob_state) as i16;
+        if diff >= 4 {
+            self.knob_state = self.knob_state.wrapping_add(4);
+            return Some(KnobRight);
+        } else if diff <= -4 {
+            self.knob_state = self.knob_state.wrapping_sub(4);
+            return Some(KnobLeft);
+        }
+        // Or maybe nothing's happened.
+        None
+    }
+
+    pub fn write_lights(&mut self, lights: &[ColorRgb]) {
+        self.strip.send(lights).expect("Failed to send lights");
+    }
+
     pub fn new() -> System {
         // Get access to peripherals
         let cp = cortex_m::Peripherals::take().unwrap();
@@ -80,22 +121,8 @@ impl System {
             delay,
             encoder,
             button,
+            button_state: false,
+            knob_state: 0,
         }
-    }
-
-    pub fn delay_ms(&mut self, ms: u32) {
-        self.delay.delay_ms(ms);
-    }
-
-    pub fn read_encoder(&mut self) -> u16 {
-        self.encoder.count()
-    }
-
-    pub fn read_button(&mut self) -> bool {
-        self.button.is_low()
-    }
-
-    pub fn write_lights(&mut self, lights: &[ColorRgb]) {
-        self.strip.send(lights).expect("Failed to send lights");
     }
 }

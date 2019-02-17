@@ -5,40 +5,81 @@ extern crate panic_semihosting;
 
 mod system;
 
+use system::EncoderEvent::*;
 use system::System;
 
 use cortex_m_rt::entry;
 use cortex_m_semihosting::hprintln;
-use dotstar::{ColorRgb, Duration, FlashyShow, LightShow};
+use dotstar::{CircleShow, ColorRgb, Duration, FlashyShow, LightShow};
+
+const PERIOD: u32 = 10;
+
+struct Shows {
+    mode: usize,
+    flashy_demo: FlashyShow,
+    circle_demo: CircleShow,
+}
+
+impl Shows {
+    fn new() -> Shows {
+        Shows {
+            mode: 0,
+            flashy_demo: FlashyShow::new(),
+            circle_demo: CircleShow::new(),
+        }
+    }
+
+    fn switch_mode(&mut self) {
+        self.mode = (self.mode + 1) % 2
+    }
+
+    fn knob_left(&mut self) {
+        match self.mode {
+            0 => self.circle_demo.change_brightness(-10),
+            1 => self.flashy_demo.change_brightness(-10),
+            _ => panic!("Invalid mode"),
+        }
+    }
+
+    fn knob_right(&mut self) {
+        match self.mode {
+            0 => self.circle_demo.change_brightness(10),
+            1 => self.flashy_demo.change_brightness(10),
+            _ => panic!("Invalid mode"),
+        }
+    }
+
+    fn next(&mut self, lights: &mut [ColorRgb]) -> Duration {
+        match self.mode {
+            0 => self.circle_demo.next(lights),
+            1 => self.flashy_demo.next(lights),
+            _ => panic!("Invalid mode"),
+        }
+    }
+}
 
 #[entry]
 fn main() -> ! {
     hprintln!("Hello world!").unwrap();
 
     let mut system = System::new();
-
-    // let mut settings = CircleShowSettings::default();
-    // settings.brightness = 20;
-    // let mut demo = CircleShow::new(&settings);
-    let mut demo = FlashyShow::new(&());
+    let mut shows = Shows::new();
     let mut lights = [ColorRgb { r: 0, g: 0, b: 0 }; 100];
 
-    let period = 10u32;
     let mut duration = Duration::Millis(0);
     loop {
-        system.delay_ms(500_u32);
-        hprintln!("{}", system.read_encoder()).unwrap();
-        if system.read_button() {
-            hprintln!("button down!").unwrap();
+        match system.poll_event() {
+            Some(ButtonPress) => shows.switch_mode(),
+            Some(KnobLeft) => shows.knob_left(),
+            Some(KnobRight) => shows.knob_right(),
+            None => (),
         }
 
         if duration.is_zero() {
-            // hprintln!("before").unwrap();
-            duration = demo.next(&mut lights);
-            // hprintln!("after").unwrap();
+            duration = shows.next(&mut lights);
             system.write_lights(&lights);
         }
-        system.delay_ms(period);
-        duration.subtract(period);
+        system.delay_ms(PERIOD);
+        duration.subtract(PERIOD);
     }
 }
