@@ -7,10 +7,13 @@ version = "0.1.0"
 
 [dependencies]
 dotstar = { path = "../dotstar" }
-cortex-m = "0.5.8"
 cortex-m-rt = "0.6.5"
 cortex-m-semihosting = "0.3.2"
 panic-semihosting = "*"
+
+[dependencies.cortex-m]
+version = "0.5.8"
+features = ["const-fn"]
 
 [dependencies.stm32f1xx-hal]
 version = "0.2.0"

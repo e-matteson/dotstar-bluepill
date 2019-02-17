@@ -1,15 +1,18 @@
 #![no_std]
 #![no_main]
-#![feature(custom_attribute)]
+#![feature(custom_attribute, asm)]
 
 extern crate panic_semihosting;
+mod button;
 mod system;
+mod timer;
 
 use system::System;
+use timer::Timer;
 
 use cortex_m_rt::entry;
 use cortex_m_semihosting::hprintln;
-use dotstar::{ColorRgb, Duration, FlashyShow, LightShow};
+use dotstar::{ColorRgb, FlashyShow, LightShow};
 
 #[entry]
 fn main() -> ! {
@@ -23,22 +26,19 @@ fn main() -> ! {
     let mut demo = FlashyShow::new(&());
     let mut lights = [ColorRgb { r: 0, g: 0, b: 0 }; 100];
 
-    let period = 10u32;
-    let mut duration = Duration::Millis(0);
+    let mut timer = Timer::new();
+    timer.force_ready(&system);
     loop {
-        system.delay_ms(500_u32);
-        hprintln!("{}", system.read_encoder()).unwrap();
-        if system.read_button() {
+        // Sleep until an interrupt happens! Probably it will be the systick interrupt that fires every 1ms.
+        unsafe { asm!("wfi") };
+
+        if system.was_pressed() {
             hprintln!("button down!").unwrap();
         }
 
-        if duration.is_zero() {
-            // hprintln!("before").unwrap();
-            duration = demo.next(&mut lights);
-            // hprintln!("after").unwrap();
+        if timer.is_ready(&system) {
+            timer.reset(&system, &demo.next(&mut lights));
             system.write_lights(&lights);
         }
-        system.delay_ms(period);
-        duration.subtract(period);
     }
 }

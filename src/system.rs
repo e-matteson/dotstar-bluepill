@@ -1,14 +1,12 @@
-// use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
-// use core::cell::RefCell;
 
 use cortex_m_rt::exception;
 
-// use cortex_m::interrupt::{self, Mutex};
+use cortex_m::interrupt::{self, Mutex};
 use cortex_m::peripheral::syst::SystClkSource;
 // use cortex_m_semihosting::hprintln;
 
-use dotstar::{ColorRgb, DotstarStrip};
 use stm32f1xx_hal::{
     gpio::{
         gpioa::{PA0, PA1, PA2, PA5, PA6, PA7},
@@ -20,6 +18,10 @@ use stm32f1xx_hal::{
     stm32::{self, SPI1, TIM2},
 };
 
+use dotstar::{ColorRgb, DotstarStrip};
+
+use crate::button::Button;
+
 type DotstarSPI = Spi<
     SPI1,
     (
@@ -30,13 +32,12 @@ type DotstarSPI = Spi<
 >;
 
 static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
-// static GLOBAL_BUTTON_PRESSED: AtomicBool = AtomicUsize::new(false);
-// static BUTTON_PIN: Mutex<RefCell<Option<PA2<Input<PullUp>>>>> = Mutex::new(RefCell::new(None));
+static BUTTON_PIN: Mutex<RefCell<Option<Button<PA2<Input<PullUp>>>>>> =
+    Mutex::new(RefCell::new(None));
 
 pub struct System {
     pub strip: DotstarStrip<DotstarSPI>,
     pub encoder: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
-    pub button: PA2<Input<PullUp>>,
 }
 
 impl System {
@@ -62,8 +63,10 @@ impl System {
         let c2 = gpioa.pa1;
         let encoder = Qei::tim2(dp.TIM2, (c1, c2), &mut afio.mapr, &mut rcc.apb1);
 
-        let button = gpioa.pa2.into_pull_up_input(&mut gpioa.crl);
-        // interrupt::free(|cs| BUTTON_PIN.borrow(cs).replace(Some(button)));
+        // Create push-button
+        let button = Button::new(gpioa.pa2.into_pull_up_input(&mut gpioa.crl));
+        interrupt::free(|cs| BUTTON_PIN.borrow(cs).replace(Some(button)));
+
         // Configures the system timer to trigger a SysTick exception every 1 milliseceond
         let mut systick = cp.SYST;
         systick.set_clock_source(SystClkSource::Core);
@@ -93,26 +96,27 @@ impl System {
 
         System {
             strip: DotstarStrip::new(spi),
-            // systick,
             encoder,
-            button,
         }
     }
+
     pub fn get_millis(&self) -> u32 {
         GLOBAL_MILLIS.load(Ordering::Relaxed) as u32
-    }
-
-    pub fn delay_ms(&self, ms: u32) {
-        let end = self.get_millis() + ms;
-        while self.get_millis() < end {}
     }
 
     pub fn read_encoder(&mut self) -> u16 {
         self.encoder.count()
     }
 
-    pub fn read_button(&mut self) -> bool {
-        self.button.is_low()
+    pub fn was_pressed(&mut self) -> bool {
+        interrupt::free(|cs| {
+            BUTTON_PIN
+                .borrow(cs)
+                .borrow_mut()
+                .as_mut()
+                .expect("button pin must be set before use")
+                .was_pressed()
+        })
     }
 
     pub fn write_lights(&mut self, lights: &[ColorRgb]) {
@@ -123,4 +127,13 @@ impl System {
 #[exception]
 fn SysTick() {
     GLOBAL_MILLIS.fetch_add(1, Ordering::Relaxed);
+
+    interrupt::free(|cs| {
+        BUTTON_PIN
+            .borrow(cs)
+            .borrow_mut()
+            .as_mut()
+            .expect("button pin must be set before interrupt is enabled")
+            .sample();
+    })
 }
