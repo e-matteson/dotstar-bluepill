@@ -8,25 +8,26 @@ use cortex_m::peripheral::syst::SystClkSource;
 
 use stm32f1xx_hal::{
     gpio::{
-        gpioa::{PA0, PA1, PA2, PA5, PA6, PA7},
+        gpioa::{PA0, PA1, PA2, PA6, PA7},
+        gpiob::{PB3, PB4, PB5, PB6, PB7},
         Alternate, Floating, Input, PullUp, PushPull,
     },
     prelude::*,
     qei::Qei,
     spi::{Mode, Phase, Polarity, Spi},
-    stm32::{self, SPI1, TIM2},
+    stm32::{self, SPI1, TIM2, TIM3, TIM4},
 };
 
 use dotstar::{ColorRgb, DotstarStrip};
 
-use crate::button::Button;
+use crate::controls::{Button, Encoder};
 
 type DotstarSPI = Spi<
     SPI1,
     (
-        PA5<Alternate<PushPull>>,
-        PA6<Input<Floating>>,
-        PA7<Alternate<PushPull>>,
+        PB3<Alternate<PushPull>>,
+        PB4<Input<Floating>>,
+        PB5<Alternate<PushPull>>,
     ),
 >;
 
@@ -36,8 +37,9 @@ static BUTTON_PIN: Mutex<RefCell<Option<Button<PA2<Input<PullUp>>>>>> =
 
 pub struct System {
     strip: DotstarStrip<DotstarSPI>,
-    knob_state: u16,
-    encoder: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
+    encoder: Encoder<Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>>,
+    encoder2: Encoder<Qei<TIM3, (PA6<Input<Floating>>, PA7<Input<Floating>>)>>,
+    encoder3: Encoder<Qei<TIM4, (PB6<Input<Floating>>, PB7<Input<Floating>>)>>,
 }
 
 pub enum EncoderEvent {
@@ -54,14 +56,10 @@ impl System {
         if self.was_pressed() {
             return Some(ButtonPress);
         }
-        // Poll the knob (each tick increments the encoder by 4, so round it).
-        let new_knob_state = self.encoder.count();
-        let diff = new_knob_state.wrapping_sub(self.knob_state) as i16;
-        if diff >= 4 {
-            self.knob_state = self.knob_state.wrapping_add(4);
+        let clicks = self.encoder.clicks_moved();
+        if clicks > 0 {
             return Some(KnobRight);
-        } else if diff <= -4 {
-            self.knob_state = self.knob_state.wrapping_sub(4);
+        } else if clicks < 0 {
             return Some(KnobLeft);
         }
         // Or maybe nothing's happened.
@@ -80,15 +78,33 @@ impl System {
         let clocks = rcc.cfgr.freeze(&mut flash.acr);
 
         // Get SPI pins
-        let mut gpioa = dp.GPIOA.split(&mut rcc.apb2);
-        let sck = gpioa.pa5.into_alternate_push_pull(&mut gpioa.crl);
-        let miso = gpioa.pa6;
-        let mosi = gpioa.pa7.into_alternate_push_pull(&mut gpioa.crl);
+        let mut gpiob = dp.GPIOB.split(&mut rcc.apb2);
+        let sck = gpiob.pb3.into_alternate_push_pull(&mut gpiob.crl);
+        let miso = gpiob.pb4;
+        let mosi = gpiob.pb5.into_alternate_push_pull(&mut gpiob.crl);
 
         // Get quadrature encoder pins
-        let c1 = gpioa.pa0;
-        let c2 = gpioa.pa1;
-        let encoder = Qei::tim2(dp.TIM2, (c1, c2), &mut afio.mapr, &mut rcc.apb1);
+        let mut gpioa = dp.GPIOA.split(&mut rcc.apb2);
+        let encoder = Encoder::new(Qei::tim2(
+            dp.TIM2,
+            (gpioa.pa0, gpioa.pa1),
+            &mut afio.mapr,
+            &mut rcc.apb1,
+        ));
+
+        let encoder2 = Encoder::new(Qei::tim3(
+            dp.TIM3,
+            (gpioa.pa6, gpioa.pa7),
+            &mut afio.mapr,
+            &mut rcc.apb1,
+        ));
+
+        let encoder3 = Encoder::new(Qei::tim4(
+            dp.TIM4,
+            (gpiob.pb6, gpiob.pb7),
+            &mut afio.mapr,
+            &mut rcc.apb1,
+        ));
 
         // Create push-button
         let button = Button::new(gpioa.pa2.into_pull_up_input(&mut gpioa.crl));
@@ -124,7 +140,8 @@ impl System {
         System {
             strip: DotstarStrip::new(spi),
             encoder,
-            knob_state: 0,
+            encoder2,
+            encoder3,
         }
     }
 

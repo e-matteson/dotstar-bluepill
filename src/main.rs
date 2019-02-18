@@ -3,7 +3,7 @@
 #![feature(custom_attribute, asm)]
 
 extern crate panic_semihosting;
-mod button;
+mod controls;
 mod system;
 mod timer;
 
