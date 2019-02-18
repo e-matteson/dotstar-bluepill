@@ -89,7 +89,7 @@ impl System {
                 phase: Phase::CaptureOnFirstTransition,
                 polarity: Polarity::IdleLow,
             },
-            1.mhz(),
+            clocks.pclk2(), // use max possible SPI rate
             clocks,
             &mut rcc.apb2,
         );
