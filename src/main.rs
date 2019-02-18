@@ -33,26 +33,36 @@ impl Shows {
         self.mode = (self.mode + 1) % 2
     }
 
-    fn knob_left(&mut self) {
+    fn knob_left(&mut self, lights: &mut [ColorRgb]) {
         match self.mode {
             0 => self.circle_demo.change_brightness(-10),
             1 => self.flashy_demo.change_brightness(-10),
             _ => panic!("Invalid mode"),
         }
+        self.update(lights);
     }
 
-    fn knob_right(&mut self) {
+    fn knob_right(&mut self, lights: &mut [ColorRgb]) {
         match self.mode {
             0 => self.circle_demo.change_brightness(10),
             1 => self.flashy_demo.change_brightness(10),
             _ => panic!("Invalid mode"),
         }
+        self.update(lights);
     }
 
     fn next(&mut self, lights: &mut [ColorRgb]) -> Duration {
         match self.mode {
             0 => self.circle_demo.next(lights),
             1 => self.flashy_demo.next(lights),
+            _ => panic!("Invalid mode"),
+        }
+    }
+
+    fn update(&mut self, lights: &mut [ColorRgb]) {
+        match self.mode {
+            0 => self.circle_demo.update(lights),
+            1 => self.flashy_demo.update(lights),
             _ => panic!("Invalid mode"),
         }
     }
@@ -70,8 +80,8 @@ fn main() -> ! {
     loop {
         match system.poll_event() {
             Some(ButtonPress) => shows.switch_mode(),
-            Some(KnobLeft) => shows.knob_left(),
-            Some(KnobRight) => shows.knob_right(),
+            Some(KnobLeft) => shows.knob_left(&mut lights),
+            Some(KnobRight) => shows.knob_right(&mut lights),
             None => (),
         }
 
