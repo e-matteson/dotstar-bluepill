@@ -84,9 +84,18 @@ fn main() -> ! {
         unsafe { asm!("wfi") };
 
         match system.poll_event() {
-            Some(ButtonPress) => shows.switch_mode(),
-            Some(KnobLeft) => shows.knob_left(&mut lights),
-            Some(KnobRight) => shows.knob_right(&mut lights),
+            Some(ButtonPress) => {
+                shows.switch_mode();
+                system.write_lights(&lights);
+            }
+            Some(KnobLeft) => {
+                shows.knob_left(&mut lights);
+                system.write_lights(&lights);
+            }
+            Some(KnobRight) => {
+                shows.knob_right(&mut lights);
+                system.write_lights(&lights);
+            }
             None => (),
         }
 
