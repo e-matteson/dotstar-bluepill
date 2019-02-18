@@ -1,9 +1,12 @@
-extern crate panic_semihosting;
-extern crate stm32f1xx_hal as hal;
+use core::cell::RefCell;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use dotstar::{ColorRgb, DotstarStrip};
-use hal::{
-    delay::Delay,
+use cortex_m_rt::exception;
+
+use cortex_m::interrupt::{self, Mutex};
+use cortex_m::peripheral::syst::SystClkSource;
+
+use stm32f1xx_hal::{
     gpio::{
         gpioa::{PA0, PA1, PA2, PA5, PA6, PA7},
         Alternate, Floating, Input, PullUp, PushPull,
@@ -14,6 +17,10 @@ use hal::{
     stm32::{self, SPI1, TIM2},
 };
 
+use dotstar::{ColorRgb, DotstarStrip};
+
+use crate::button::Button;
+
 type DotstarSPI = Spi<
     SPI1,
     (
@@ -23,13 +30,14 @@ type DotstarSPI = Spi<
     ),
 >;
 
+static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
+static BUTTON_PIN: Mutex<RefCell<Option<Button<PA2<Input<PullUp>>>>>> =
+    Mutex::new(RefCell::new(None));
+
 pub struct System {
     strip: DotstarStrip<DotstarSPI>,
-    delay: Delay,
     knob_state: u16,
-    button_state: bool,
     encoder: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
-    button: PA2<Input<PullUp>>,
 }
 
 pub enum EncoderEvent {
@@ -41,18 +49,10 @@ pub enum EncoderEvent {
 use self::EncoderEvent::*;
 
 impl System {
-    pub fn delay_ms(&mut self, ms: u32) {
-        self.delay.delay_ms(ms);
-    }
-
     pub fn poll_event(&mut self) -> Option<EncoderEvent> {
         // Poll the button
-        let new_button_state = self.button.is_low();
-        if new_button_state != self.button_state {
-            self.button_state = new_button_state;
-            if new_button_state {
-                return Some(ButtonPress);
-            }
+        if self.was_pressed() {
+            return Some(ButtonPress);
         }
         // Poll the knob (each tick increments the encoder by 4, so round it).
         let new_knob_state = self.encoder.count();
@@ -68,10 +68,6 @@ impl System {
         None
     }
 
-    pub fn write_lights(&mut self, lights: &[ColorRgb]) {
-        self.strip.send(lights).expect("Failed to send lights");
-    }
-
     pub fn new() -> System {
         // Get access to peripherals
         let cp = cortex_m::Peripherals::take().unwrap();
@@ -82,7 +78,6 @@ impl System {
         // Configure clocks
         let mut flash = dp.FLASH.constrain();
         let clocks = rcc.cfgr.freeze(&mut flash.acr);
-        let delay = Delay::new(cp.SYST, clocks);
 
         // Get SPI pins
         let mut gpioa = dp.GPIOA.split(&mut rcc.apb2);
@@ -94,7 +89,17 @@ impl System {
         let c1 = gpioa.pa0;
         let c2 = gpioa.pa1;
         let encoder = Qei::tim2(dp.TIM2, (c1, c2), &mut afio.mapr, &mut rcc.apb1);
-        let button = gpioa.pa2.into_pull_up_input(&mut gpioa.crl);
+
+        // Create push-button
+        let button = Button::new(gpioa.pa2.into_pull_up_input(&mut gpioa.crl));
+        interrupt::free(|cs| BUTTON_PIN.borrow(cs).replace(Some(button)));
+
+        // Configures the system timer to trigger a SysTick exception every 1 milliseceond
+        let mut systick = cp.SYST;
+        systick.set_clock_source(SystClkSource::Core);
+        systick.set_reload(clocks.sysclk().0 / 1_000);
+        systick.enable_counter();
+        systick.enable_interrupt();
 
         // Onboard LED
         // let mut gpioc = dp.GPIOC.split(&mut rcc.apb2);
@@ -111,18 +116,48 @@ impl System {
                 phase: Phase::CaptureOnFirstTransition,
                 polarity: Polarity::IdleLow,
             },
-            1.mhz(),
+            clocks.pclk2(), // use max possible SPI rate
             clocks,
             &mut rcc.apb2,
         );
 
         System {
             strip: DotstarStrip::new(spi),
-            delay,
             encoder,
-            button,
-            button_state: false,
             knob_state: 0,
         }
     }
+
+    pub fn get_millis(&self) -> u32 {
+        GLOBAL_MILLIS.load(Ordering::Relaxed) as u32
+    }
+
+    pub fn was_pressed(&mut self) -> bool {
+        interrupt::free(|cs| {
+            BUTTON_PIN
+                .borrow(cs)
+                .borrow_mut()
+                .as_mut()
+                .expect("button pin must be set before use")
+                .was_pressed()
+        })
+    }
+
+    pub fn write_lights(&mut self, lights: &[ColorRgb]) {
+        self.strip.send(lights).expect("Failed to send lights");
+    }
+}
+
+#[exception]
+fn SysTick() {
+    GLOBAL_MILLIS.fetch_add(1, Ordering::Relaxed);
+
+    interrupt::free(|cs| {
+        BUTTON_PIN
+            .borrow(cs)
+            .borrow_mut()
+            .as_mut()
+            .expect("button pin must be set before interrupt is enabled")
+            .sample();
+    })
 }

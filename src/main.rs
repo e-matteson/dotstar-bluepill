@@ -1,18 +1,19 @@
 #![no_std]
 #![no_main]
+#![feature(custom_attribute, asm)]
 
 extern crate panic_semihosting;
-
+mod button;
 mod system;
+mod timer;
 
 use system::EncoderEvent::*;
 use system::System;
+use timer::Timer;
 
 use cortex_m_rt::entry;
 use cortex_m_semihosting::hprintln;
 use dotstar::{CircleShow, ColorRgb, Duration, FlashyShow, LightShow};
-
-const PERIOD: u32 = 10;
 
 struct Shows {
     mode: usize,
@@ -35,7 +36,7 @@ impl Shows {
 
     fn knob_left(&mut self, lights: &mut [ColorRgb]) {
         match self.mode {
-            0 => self.circle_demo.change_brightness(-10),
+            0 => self.circle_demo.change_red(-5),
             1 => self.flashy_demo.change_brightness(-10),
             _ => panic!("Invalid mode"),
         }
@@ -44,7 +45,7 @@ impl Shows {
 
     fn knob_right(&mut self, lights: &mut [ColorRgb]) {
         match self.mode {
-            0 => self.circle_demo.change_brightness(10),
+            0 => self.circle_demo.change_red(5),
             1 => self.flashy_demo.change_brightness(10),
             _ => panic!("Invalid mode"),
         }
@@ -76,8 +77,12 @@ fn main() -> ! {
     let mut shows = Shows::new();
     let mut lights = [ColorRgb { r: 0, g: 0, b: 0 }; 100];
 
-    let mut duration = Duration::Millis(0);
+    let mut timer = Timer::new();
+    timer.force_ready(&system);
     loop {
+        // Sleep until an interrupt happens! Probably it will be the systick interrupt that fires every 1ms.
+        unsafe { asm!("wfi") };
+
         match system.poll_event() {
             Some(ButtonPress) => shows.switch_mode(),
             Some(KnobLeft) => shows.knob_left(&mut lights),
@@ -85,11 +90,9 @@ fn main() -> ! {
             None => (),
         }
 
-        if duration.is_zero() {
-            duration = shows.next(&mut lights);
+        if timer.is_ready(&system) {
+            timer.reset(&system, &shows.next(&mut lights));
             system.write_lights(&lights);
         }
-        system.delay_ms(PERIOD);
-        duration.subtract(PERIOD);
     }
 }
