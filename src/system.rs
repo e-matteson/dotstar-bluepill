@@ -9,7 +9,7 @@ use cortex_m::peripheral::syst::SystClkSource;
 use stm32f1xx_hal::{
     gpio::{
         gpioa::{PA0, PA1, PA2, PA6, PA7},
-        gpiob::{PB3, PB4, PB5, PB6, PB7},
+        gpiob::{PB10, PB11, PB12, PB13, PB14, PB15, PB3, PB4, PB5, PB6, PB7, PB8, PB9},
         Alternate, Floating, Input, PullUp, PushPull,
     },
     prelude::*,
@@ -20,7 +20,7 @@ use stm32f1xx_hal::{
 
 use dotstar::{ColorRgb, DotstarStrip};
 
-use crate::controls::{Button, Encoder};
+use crate::controls::{Button, Encoder, Selector};
 
 type DotstarSPI = Spi<
     SPI1,
@@ -29,6 +29,17 @@ type DotstarSPI = Spi<
         PB4<Input<Floating>>,
         PB5<Alternate<PushPull>>,
     ),
+>;
+
+type ModeSelector = Selector<
+    PB8<Input<PullUp>>,
+    PB9<Input<PullUp>>,
+    PB10<Input<PullUp>>,
+    PB11<Input<PullUp>>,
+    PB12<Input<PullUp>>,
+    PB13<Input<PullUp>>,
+    PB14<Input<PullUp>>,
+    PB15<Input<PullUp>>,
 >;
 
 static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
@@ -40,6 +51,7 @@ pub struct System {
     encoder: Encoder<Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>>,
     encoder2: Encoder<Qei<TIM3, (PA6<Input<Floating>>, PA7<Input<Floating>>)>>,
     encoder3: Encoder<Qei<TIM4, (PB6<Input<Floating>>, PB7<Input<Floating>>)>>,
+    mode_selector: ModeSelector,
 }
 
 pub enum EncoderEvent {
@@ -106,6 +118,17 @@ impl System {
             &mut rcc.apb1,
         ));
 
+        let mode_selector = ModeSelector::new(
+            gpiob.pb8.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb9.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb10.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb11.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb12.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb13.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb14.into_pull_up_input(&mut gpiob.crh),
+            gpiob.pb15.into_pull_up_input(&mut gpiob.crh),
+        );
+
         // Create push-button
         let button = Button::new(gpioa.pa2.into_pull_up_input(&mut gpioa.crl));
         interrupt::free(|cs| BUTTON_PIN.borrow(cs).replace(Some(button)));
@@ -142,6 +165,7 @@ impl System {
             encoder,
             encoder2,
             encoder3,
+            mode_selector,
         }
     }
 

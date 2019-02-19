@@ -16,6 +16,84 @@ where
     prev_count: u16,
 }
 
+pub struct Selector<P0, P1, P2, P3, P4, P5, P6, P7>
+where
+    P0: InputPin,
+    P1: InputPin,
+    P2: InputPin,
+    P3: InputPin,
+    P4: InputPin,
+    P5: InputPin,
+    P6: InputPin,
+    P7: InputPin,
+{
+    pin0: P0,
+    pin1: P1,
+    pin2: P2,
+    pin3: P3,
+    pin4: P4,
+    pin5: P5,
+    pin6: P6,
+    pin7: P7,
+}
+
+impl<P0, P1, P2, P3, P4, P5, P6, P7> Selector<P0, P1, P2, P3, P4, P5, P6, P7>
+where
+    P0: InputPin,
+    P1: InputPin,
+    P2: InputPin,
+    P3: InputPin,
+    P4: InputPin,
+    P5: InputPin,
+    P6: InputPin,
+    P7: InputPin,
+{
+    pub fn new(
+        pin0: P0,
+        pin1: P1,
+        pin2: P2,
+        pin3: P3,
+        pin4: P4,
+        pin5: P5,
+        pin6: P6,
+        pin7: P7,
+    ) -> Self {
+        Self {
+            pin0,
+            pin1,
+            pin2,
+            pin3,
+            pin4,
+            pin5,
+            pin6,
+            pin7,
+        }
+    }
+    pub fn selection(&self) -> Option<u8> {
+        let num = if self.pin0.is_low() {
+            0
+        } else if self.pin1.is_low() {
+            1
+        } else if self.pin2.is_low() {
+            2
+        } else if self.pin3.is_low() {
+            3
+        } else if self.pin4.is_low() {
+            4
+        } else if self.pin5.is_low() {
+            5
+        } else if self.pin6.is_low() {
+            6
+        } else if self.pin7.is_low() {
+            7
+        } else {
+            // Uh oh, is the switch broken or disconnected?
+            return None;
+        };
+        Some(num)
+    }
+}
+
 impl<T: InputPin> Button<T> {
     pub fn new(pin: T) -> Self {
         Button {
