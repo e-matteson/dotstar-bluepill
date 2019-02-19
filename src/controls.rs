@@ -35,6 +35,7 @@ where
     pin5: P5,
     pin6: P6,
     pin7: P7,
+    previous: Option<u8>,
 }
 
 impl<P0, P1, P2, P3, P4, P5, P6, P7> Selector<P0, P1, P2, P3, P4, P5, P6, P7>
@@ -67,10 +68,23 @@ where
             pin5,
             pin6,
             pin7,
+            previous: None,
         }
     }
-    pub fn selection(&self) -> Option<u8> {
-        let num = if self.pin0.is_low() {
+
+    pub fn changed(&mut self) -> Option<u8> {
+        let current = self.selection();
+        if let Some(prev) = self.previous {
+            if prev == current {
+                return None;
+            }
+        }
+        self.previous = Some(current);
+        self.previous.clone()
+    }
+
+    pub fn selection(&self) -> u8 {
+        if self.pin0.is_low() {
             0
         } else if self.pin1.is_low() {
             1
@@ -87,10 +101,8 @@ where
         } else if self.pin7.is_low() {
             7
         } else {
-            // Uh oh, is the switch broken or disconnected?
-            return None;
-        };
-        Some(num)
+            panic!("selector switch is disconnected or broken")
+        }
     }
 }
 
@@ -130,18 +142,20 @@ where
         Self { qei, prev_count: 0 }
     }
 
-    pub fn clicks_moved(&mut self) -> i16 {
+    pub fn clicks_moved(&mut self) -> Option<i16> {
         const COUNTS_PER_CLICK: i16 = 4;
         let new_count: u16 = self.qei.count().into();
         let diff = new_count.wrapping_sub(self.prev_count) as i16;
         let clicks = diff / COUNTS_PER_CLICK; // floor to the nearest whole click.
-        if clicks < 0 {
+        if clicks == 0 {
+            return None;
+        } else if clicks < 0 {
             self.prev_count
                 .wrapping_sub((clicks.abs() * COUNTS_PER_CLICK) as u16);
         } else {
             self.prev_count
                 .wrapping_add((clicks * COUNTS_PER_CLICK) as u16);
         }
-        clicks
+        Some(clicks)
     }
 }

@@ -8,7 +8,7 @@ use cortex_m::peripheral::syst::SystClkSource;
 
 use stm32f1xx_hal::{
     gpio::{
-        gpioa::{PA0, PA1, PA2, PA6, PA7},
+        gpioa::{PA0, PA1, PA2, PA3, PA4, PA6, PA7},
         gpiob::{PB10, PB11, PB12, PB13, PB14, PB15, PB3, PB4, PB5, PB6, PB7, PB8, PB9},
         Alternate, Floating, Input, PullUp, PushPull,
     },
@@ -43,41 +43,20 @@ type ModeSelector = Selector<
 >;
 
 static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
-static BUTTON_PIN: Mutex<RefCell<Option<Button<PA2<Input<PullUp>>>>>> =
-    Mutex::new(RefCell::new(None));
+static BUTTON0: Mutex<RefCell<Option<Button<PA2<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
+// TODO check button pins
+static BUTTON1: Mutex<RefCell<Option<Button<PA3<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
+static BUTTON2: Mutex<RefCell<Option<Button<PA4<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
 
 pub struct System {
     strip: DotstarStrip<DotstarSPI>,
-    encoder: Encoder<Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>>,
-    encoder2: Encoder<Qei<TIM3, (PA6<Input<Floating>>, PA7<Input<Floating>>)>>,
-    encoder3: Encoder<Qei<TIM4, (PB6<Input<Floating>>, PB7<Input<Floating>>)>>,
-    mode_selector: ModeSelector,
+    pub encoder0: Encoder<Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>>,
+    pub encoder1: Encoder<Qei<TIM3, (PA6<Input<Floating>>, PA7<Input<Floating>>)>>,
+    pub encoder2: Encoder<Qei<TIM4, (PB6<Input<Floating>>, PB7<Input<Floating>>)>>,
+    pub mode_selector: ModeSelector,
 }
-
-pub enum EncoderEvent {
-    ButtonPress,
-    KnobRight,
-    KnobLeft,
-}
-
-use self::EncoderEvent::*;
 
 impl System {
-    pub fn poll_event(&mut self) -> Option<EncoderEvent> {
-        // Poll the button
-        if self.was_pressed() {
-            return Some(ButtonPress);
-        }
-        let clicks = self.encoder.clicks_moved();
-        if clicks > 0 {
-            return Some(KnobRight);
-        } else if clicks < 0 {
-            return Some(KnobLeft);
-        }
-        // Or maybe nothing's happened.
-        None
-    }
-
     pub fn new() -> System {
         // Get access to peripherals
         let cp = cortex_m::Peripherals::take().unwrap();
@@ -97,21 +76,21 @@ impl System {
 
         // Get quadrature encoder pins
         let mut gpioa = dp.GPIOA.split(&mut rcc.apb2);
-        let encoder = Encoder::new(Qei::tim2(
+        let encoder0 = Encoder::new(Qei::tim2(
             dp.TIM2,
             (gpioa.pa0, gpioa.pa1),
             &mut afio.mapr,
             &mut rcc.apb1,
         ));
 
-        let encoder2 = Encoder::new(Qei::tim3(
+        let encoder1 = Encoder::new(Qei::tim3(
             dp.TIM3,
             (gpioa.pa6, gpioa.pa7),
             &mut afio.mapr,
             &mut rcc.apb1,
         ));
 
-        let encoder3 = Encoder::new(Qei::tim4(
+        let encoder2 = Encoder::new(Qei::tim4(
             dp.TIM4,
             (gpiob.pb6, gpiob.pb7),
             &mut afio.mapr,
@@ -131,7 +110,7 @@ impl System {
 
         // Create push-button
         let button = Button::new(gpioa.pa2.into_pull_up_input(&mut gpioa.crl));
-        interrupt::free(|cs| BUTTON_PIN.borrow(cs).replace(Some(button)));
+        interrupt::free(|cs| BUTTON0.borrow(cs).replace(Some(button)));
 
         // Configures the system timer to trigger a SysTick exception every 1 milliseceond
         let mut systick = cp.SYST;
@@ -162,29 +141,60 @@ impl System {
 
         System {
             strip: DotstarStrip::new(spi),
-            encoder,
+            encoder0,
+            encoder1,
             encoder2,
-            encoder3,
             mode_selector,
         }
+    }
+    pub const fn num_encoders() -> usize {
+        3
+    }
+    pub const fn num_buttons() -> usize {
+        3
+    }
+    pub fn encoder_moved(&mut self, encoder_num: usize) -> Option<i16> {
+        // Poll the button
+        match encoder_num {
+            0 => self.encoder0.clicks_moved(),
+            1 => self.encoder1.clicks_moved(),
+            2 => self.encoder2.clicks_moved(),
+            _ => panic!("Invalid encoder"),
+        }
+    }
+
+    pub fn button_pressed(&mut self, which_button: usize) -> bool {
+        interrupt::free(|cs| {
+            match which_button {
+                0 => BUTTON0
+                    .borrow(cs)
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("button pin must be set before use")
+                    .was_pressed(),
+                1 => BUTTON1
+                    .borrow(cs)
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("button pin must be set before use")
+                    .was_pressed(),
+                2 => BUTTON2
+                    .borrow(cs)
+                    .borrow_mut()
+                    .as_mut()
+                    .expect("button pin must be set before use")
+                    .was_pressed(),
+                // TODO is it bad to panic in an interrupt-free context?
+                _ => panic!("Invalid button"),
+            }
+        })
     }
 
     pub fn get_millis(&self) -> u32 {
         GLOBAL_MILLIS.load(Ordering::Relaxed) as u32
     }
 
-    pub fn was_pressed(&mut self) -> bool {
-        interrupt::free(|cs| {
-            BUTTON_PIN
-                .borrow(cs)
-                .borrow_mut()
-                .as_mut()
-                .expect("button pin must be set before use")
-                .was_pressed()
-        })
-    }
-
-    pub fn write_lights(&mut self, lights: &[ColorRgb]) {
+    pub fn send(&mut self, lights: &[ColorRgb]) {
         self.strip.send(lights).expect("Failed to send lights");
     }
 }
@@ -194,7 +204,19 @@ fn SysTick() {
     GLOBAL_MILLIS.fetch_add(1, Ordering::Relaxed);
 
     interrupt::free(|cs| {
-        BUTTON_PIN
+        BUTTON0
+            .borrow(cs)
+            .borrow_mut()
+            .as_mut()
+            .expect("button pin must be set before interrupt is enabled")
+            .sample();
+        BUTTON1
+            .borrow(cs)
+            .borrow_mut()
+            .as_mut()
+            .expect("button pin must be set before interrupt is enabled")
+            .sample();
+        BUTTON2
             .borrow(cs)
             .borrow_mut()
             .as_mut()

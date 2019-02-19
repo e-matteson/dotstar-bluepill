@@ -7,101 +7,61 @@ mod controls;
 mod system;
 mod timer;
 
-use system::EncoderEvent::*;
 use system::System;
 use timer::Timer;
 
 use cortex_m_rt::entry;
 use cortex_m_semihosting::hprintln;
-use dotstar::{CircleShow, ColorRgb, Duration, FlashyShow, LightShow};
-
-struct Shows {
-    mode: usize,
-    flashy_demo: FlashyShow,
-    circle_demo: CircleShow,
-}
-
-impl Shows {
-    fn new() -> Shows {
-        Shows {
-            mode: 0,
-            flashy_demo: FlashyShow::new(),
-            circle_demo: CircleShow::new(),
-        }
-    }
-
-    fn switch_mode(&mut self) {
-        self.mode = (self.mode + 1) % 2
-    }
-
-    fn knob_left(&mut self, lights: &mut [ColorRgb]) {
-        match self.mode {
-            0 => self.circle_demo.change_red(-5),
-            1 => self.flashy_demo.change_brightness(-10),
-            _ => panic!("Invalid mode"),
-        }
-        self.update(lights);
-    }
-
-    fn knob_right(&mut self, lights: &mut [ColorRgb]) {
-        match self.mode {
-            0 => self.circle_demo.change_red(5),
-            1 => self.flashy_demo.change_brightness(10),
-            _ => panic!("Invalid mode"),
-        }
-        self.update(lights);
-    }
-
-    fn next(&mut self, lights: &mut [ColorRgb]) -> Duration {
-        match self.mode {
-            0 => self.circle_demo.next(lights),
-            1 => self.flashy_demo.next(lights),
-            _ => panic!("Invalid mode"),
-        }
-    }
-
-    fn update(&mut self, lights: &mut [ColorRgb]) {
-        match self.mode {
-            0 => self.circle_demo.update(lights),
-            1 => self.flashy_demo.update(lights),
-            _ => panic!("Invalid mode"),
-        }
-    }
-}
+use dotstar::{ColorRgb, DemoLightShows};
 
 #[entry]
 fn main() -> ! {
     hprintln!("Hello world!").unwrap();
 
     let mut system = System::new();
-    let mut shows = Shows::new();
-    let mut lights = [ColorRgb { r: 0, g: 0, b: 0 }; 100];
+    let mut shows = DemoLightShows::new();
+    let mut lights = [ColorRgb { r: 0, g: 0, b: 0 }; 90];
 
     let mut timer = Timer::new();
-    timer.force_ready(&system);
+    timer.force_done(&system);
     loop {
         // Sleep until an interrupt happens! Probably it will be the systick interrupt that fires every 1ms.
         unsafe { asm!("wfi") };
 
-        match system.poll_event() {
-            Some(ButtonPress) => {
-                shows.switch_mode();
-                system.write_lights(&lights);
-            }
-            Some(KnobLeft) => {
-                shows.knob_left(&mut lights);
-                system.write_lights(&lights);
-            }
-            Some(KnobRight) => {
-                shows.knob_right(&mut lights);
-                system.write_lights(&lights);
-            }
-            None => (),
+        let mut needs_redisplay = update_controls(&mut system, &mut lights, &mut shows);
+        if timer.is_done(&system) {
+            timer.restart(&system, &shows.next_lights(&mut lights));
+            needs_redisplay = true;
         }
-
-        if timer.is_ready(&system) {
-            timer.reset(&system, &shows.next(&mut lights));
-            system.write_lights(&lights);
+        if needs_redisplay {
+            system.send(&lights);
         }
     }
+}
+
+fn update_controls(
+    system: &mut System,
+    lights: &mut [ColorRgb],
+    shows: &mut DemoLightShows,
+) -> bool {
+    let mut needs_redisplay = false;
+    if let Some(mode) = system.mode_selector.changed() {
+        shows.set_mode(mode);
+        needs_redisplay = true;
+    }
+
+    for i in 0..System::num_encoders() {
+        if let Some(clicks) = system.encoder_moved(i) {
+            shows.knob_turned(lights, i, clicks);
+            needs_redisplay = true;
+        }
+    }
+
+    for i in 0..System::num_buttons() {
+        if system.button_pressed(i) {
+            shows.press(lights, i);
+            needs_redisplay = true;
+        }
+    }
+    needs_redisplay
 }

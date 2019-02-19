@@ -16,7 +16,7 @@ impl Timer {
         }
     }
 
-    pub fn reset(&mut self, sys: &System, duration: &Duration) {
+    pub fn restart(&mut self, sys: &System, duration: &Duration) {
         match duration {
             Duration::Forever => {
                 self.is_disabled = true;
@@ -29,13 +29,13 @@ impl Timer {
         }
     }
 
-    pub fn force_ready(&mut self, sys: &System) {
+    pub fn force_done(&mut self, sys: &System) {
         self.is_disabled = false;
         self.length = 0;
         self.start_time = sys.get_millis();
     }
 
-    pub fn is_ready(&mut self, sys: &System) -> bool {
+    pub fn is_done(&mut self, sys: &System) -> bool {
         if self.is_disabled {
             return false;
         }
