@@ -8,7 +8,7 @@ use cortex_m::peripheral::syst::SystClkSource;
 
 use stm32f1xx_hal::{
     gpio::{
-        gpioa::{PA0, PA1, PA2, PA3, PA4, PA6, PA7},
+        gpioa::{PA0, PA1, PA10, PA6, PA7, PA8, PA9},
         gpiob::{PB10, PB11, PB12, PB13, PB14, PB15, PB3, PB4, PB5, PB6, PB7, PB8, PB9},
         Alternate, Floating, Input, PullUp, PushPull,
     },
@@ -43,10 +43,11 @@ type ModeSelector = Selector<
 >;
 
 static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
-static BUTTON0: Mutex<RefCell<Option<Button<PA2<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
+static BUTTON0: Mutex<RefCell<Option<Button<PA8<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
 // TODO check button pins
-static BUTTON1: Mutex<RefCell<Option<Button<PA3<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
-static BUTTON2: Mutex<RefCell<Option<Button<PA4<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
+static BUTTON1: Mutex<RefCell<Option<Button<PA9<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
+static BUTTON2: Mutex<RefCell<Option<Button<PA10<Input<PullUp>>>>>> =
+    Mutex::new(RefCell::new(None));
 
 pub struct System {
     strip: DotstarStrip<DotstarSPI>,
@@ -109,8 +110,14 @@ impl System {
         );
 
         // Create push-button
-        let button = Button::new(gpioa.pa2.into_pull_up_input(&mut gpioa.crl));
-        interrupt::free(|cs| BUTTON0.borrow(cs).replace(Some(button)));
+        let button0 = Button::new(gpioa.pa8.into_pull_up_input(&mut gpioa.crh));
+        let button1 = Button::new(gpioa.pa9.into_pull_up_input(&mut gpioa.crh));
+        let button2 = Button::new(gpioa.pa10.into_pull_up_input(&mut gpioa.crh));
+        interrupt::free(|cs| {
+            BUTTON0.borrow(cs).replace(Some(button0));
+            BUTTON1.borrow(cs).replace(Some(button1));
+            BUTTON2.borrow(cs).replace(Some(button2));
+        });
 
         // Configures the system timer to trigger a SysTick exception every 1 milliseceond
         let mut systick = cp.SYST;
