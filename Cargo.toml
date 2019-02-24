@@ -16,7 +16,8 @@ version = "0.5.8"
 features = ["const-fn"]
 
 [dependencies.stm32f1xx-hal]
-version = "0.2.0"
+# version = "0.2.0"
+git = "https://github.com/e-matteson/stm32f1xx-hal"
 features = ["stm32f103", "rt"]
 
 

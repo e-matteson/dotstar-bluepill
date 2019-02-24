@@ -51,9 +51,9 @@ static BUTTON2: Mutex<RefCell<Option<Button<PA10<Input<PullUp>>>>>> =
 
 pub struct System {
     strip: DotstarStrip<DotstarSPI>,
-    pub encoder0: Encoder<Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>>,
-    pub encoder1: Encoder<Qei<TIM3, (PA6<Input<Floating>>, PA7<Input<Floating>>)>>,
-    pub encoder2: Encoder<Qei<TIM4, (PB6<Input<Floating>>, PB7<Input<Floating>>)>>,
+    pub encoder0: Encoder<Qei<TIM2, (PA0<Input<PullUp>>, PA1<Input<PullUp>>)>>,
+    pub encoder1: Encoder<Qei<TIM3, (PA6<Input<PullUp>>, PA7<Input<PullUp>>)>>,
+    pub encoder2: Encoder<Qei<TIM4, (PB6<Input<PullUp>>, PB7<Input<PullUp>>)>>,
     pub mode_selector: ModeSelector,
     pub onboard_led: PC13<Output<PushPull>>,
 }
@@ -81,21 +81,30 @@ impl System {
         let mut gpioa = dp.GPIOA.split(&mut rcc.apb2);
         let encoder0 = Encoder::new(Qei::tim2(
             dp.TIM2,
-            (gpioa.pa0, gpioa.pa1),
+            (
+                gpioa.pa0.into_pull_up_input(&mut gpioa.crl),
+                gpioa.pa1.into_pull_up_input(&mut gpioa.crl),
+            ),
             &mut afio.mapr,
             &mut rcc.apb1,
         ));
 
         let encoder1 = Encoder::new(Qei::tim3(
             dp.TIM3,
-            (gpioa.pa6, gpioa.pa7),
+            (
+                gpioa.pa6.into_pull_up_input(&mut gpioa.crl),
+                gpioa.pa7.into_pull_up_input(&mut gpioa.crl),
+            ),
             &mut afio.mapr,
             &mut rcc.apb1,
         ));
 
         let encoder2 = Encoder::new(Qei::tim4(
             dp.TIM4,
-            (gpiob.pb6, gpiob.pb7),
+            (
+                gpiob.pb6.into_pull_up_input(&mut gpiob.crl),
+                gpiob.pb7.into_pull_up_input(&mut gpiob.crl),
+            ),
             &mut afio.mapr,
             &mut rcc.apb1,
         ));
