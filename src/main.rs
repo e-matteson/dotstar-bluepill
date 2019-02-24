@@ -59,7 +59,7 @@ fn update_controls(
 
     for i in 0..System::num_buttons() {
         if system.button_pressed(i) {
-            shows.press(lights, i);
+            shows.button_pressed(lights, i);
             needs_redisplay = true;
         }
     }
