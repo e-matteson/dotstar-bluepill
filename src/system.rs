@@ -65,6 +65,7 @@ impl System {
         let dp = stm32::Peripherals::take().unwrap();
         let mut rcc = dp.RCC.constrain();
         let mut afio = dp.AFIO.constrain(&mut rcc.apb2);
+        afio.mapr.disable_jtag();
 
         // Configure clocks
         let mut flash = dp.FLASH.constrain();
