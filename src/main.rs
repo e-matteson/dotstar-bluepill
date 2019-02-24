@@ -11,13 +11,12 @@ use system::System;
 use timer::Timer;
 
 use cortex_m_rt::entry;
-use cortex_m_semihosting::hprintln;
 use dotstar::{ColorRgb, DemoLightShows};
+
+use dotstar::embedded_hal::digital::ToggleableOutputPin;
 
 #[entry]
 fn main() -> ! {
-    hprintln!("Hello world!").unwrap();
-
     let mut system = System::new();
     let mut shows = DemoLightShows::new();
     let mut lights = [ColorRgb { r: 0, g: 0, b: 0 }; 90];
@@ -34,6 +33,7 @@ fn main() -> ! {
             needs_redisplay = true;
         }
         if needs_redisplay {
+            system.onboard_led.toggle();
             system.send(&lights);
         }
     }

@@ -10,7 +10,8 @@ use stm32f1xx_hal::{
     gpio::{
         gpioa::{PA0, PA1, PA10, PA6, PA7, PA8, PA9},
         gpiob::{PB10, PB11, PB12, PB13, PB14, PB15, PB3, PB4, PB5, PB6, PB7, PB8, PB9},
-        Alternate, Floating, Input, PullUp, PushPull,
+        gpioc::PC13,
+        Alternate, Floating, Input, Output, PullUp, PushPull,
     },
     prelude::*,
     qei::Qei,
@@ -44,7 +45,6 @@ type ModeSelector = Selector<
 
 static GLOBAL_MILLIS: AtomicUsize = AtomicUsize::new(0);
 static BUTTON0: Mutex<RefCell<Option<Button<PA8<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
-// TODO check button pins
 static BUTTON1: Mutex<RefCell<Option<Button<PA9<Input<PullUp>>>>>> = Mutex::new(RefCell::new(None));
 static BUTTON2: Mutex<RefCell<Option<Button<PA10<Input<PullUp>>>>>> =
     Mutex::new(RefCell::new(None));
@@ -55,6 +55,7 @@ pub struct System {
     pub encoder1: Encoder<Qei<TIM3, (PA6<Input<Floating>>, PA7<Input<Floating>>)>>,
     pub encoder2: Encoder<Qei<TIM4, (PB6<Input<Floating>>, PB7<Input<Floating>>)>>,
     pub mode_selector: ModeSelector,
+    pub onboard_led: PC13<Output<PushPull>>,
 }
 
 impl System {
@@ -127,9 +128,9 @@ impl System {
         systick.enable_interrupt();
 
         // Onboard LED
-        // let mut gpioc = dp.GPIOC.split(&mut rcc.apb2);
-        // let mut led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
-        // led.set_high(); // high is off
+        let mut gpioc = dp.GPIOC.split(&mut rcc.apb2);
+        let mut onboard_led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
+        onboard_led.set_low(); // high is off
 
         // Setup SPI
         let spi = Spi::spi1(
@@ -152,6 +153,7 @@ impl System {
             encoder1,
             encoder2,
             mode_selector,
+            onboard_led,
         }
     }
     pub const fn num_encoders() -> usize {
