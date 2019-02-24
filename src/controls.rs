@@ -151,10 +151,12 @@ where
         if clicks == 0 {
             return None;
         } else if clicks < 0 {
-            self.prev_count
+            self.prev_count = self
+                .prev_count
                 .wrapping_sub((clicks.abs() * COUNTS_PER_CLICK) as u16);
         } else {
-            self.prev_count
+            self.prev_count = self
+                .prev_count
                 .wrapping_add((clicks * COUNTS_PER_CLICK) as u16);
         }
         Some(clicks)
