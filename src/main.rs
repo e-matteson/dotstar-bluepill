@@ -27,41 +27,35 @@ fn main() -> ! {
         // Sleep until an interrupt happens! Probably it will be the systick interrupt that fires every 1ms.
         unsafe { asm!("wfi") };
 
-        let mut needs_redisplay = update_controls(&mut system, &mut lights, &mut shows);
+        let mut needs_redisplay = false;
+        if let Some(mode) = system.mode_selector.changed() {
+            shows.set_mode(mode);
+            timer.force_done(&system);
+        }
+
+        for i in 0..System::num_encoders() {
+            if let Some(clicks) = system.encoder_moved(i) {
+                shows.knob_turned(&mut lights, i, clicks);
+                needs_redisplay = true;
+            }
+        }
+
+        for i in 0..System::num_buttons() {
+            if system.button_pressed(i) {
+                shows.button_pressed(&mut lights, i);
+                needs_redisplay = true;
+            }
+        }
+
         if timer.is_done(&system) {
-            timer.restart(&system, &shows.next_lights(&mut lights));
+            let duration = shows.next_lights(&mut lights);
+            timer.restart(&system, &duration);
             needs_redisplay = true;
         }
+
         if needs_redisplay {
             system.onboard_led.toggle();
             system.send(&lights);
         }
     }
-}
-
-fn update_controls(
-    system: &mut System,
-    lights: &mut [ColorRgb],
-    shows: &mut DemoLightShows,
-) -> bool {
-    let mut needs_redisplay = false;
-    if let Some(mode) = system.mode_selector.changed() {
-        shows.set_mode(mode);
-        needs_redisplay = true;
-    }
-
-    for i in 0..System::num_encoders() {
-        if let Some(clicks) = system.encoder_moved(i) {
-            shows.knob_turned(lights, i, clicks);
-            needs_redisplay = true;
-        }
-    }
-
-    for i in 0..System::num_buttons() {
-        if system.button_pressed(i) {
-            shows.button_pressed(lights, i);
-            needs_redisplay = true;
-        }
-    }
-    needs_redisplay
 }
