@@ -73,7 +73,7 @@ where
     }
 
     pub fn changed(&mut self) -> Option<u8> {
-        let current = self.selection();
+        let current = self.selection()?;
         if let Some(prev) = self.previous {
             if prev == current {
                 return None;
@@ -83,8 +83,8 @@ where
         self.previous.clone()
     }
 
-    pub fn selection(&self) -> u8 {
-        if self.pin0.is_low() {
+    pub fn selection(&self) -> Option<u8> {
+        Some(if self.pin0.is_low() {
             0
         } else if self.pin1.is_low() {
             1
@@ -101,8 +101,9 @@ where
         } else if self.pin7.is_low() {
             7
         } else {
-            panic!("selector switch is disconnected or broken")
-        }
+            // Disconnected, or currently rotating between positions
+            return None;
+        })
     }
 }
 
